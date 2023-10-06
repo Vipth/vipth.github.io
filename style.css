@@ -1,16 +1,22 @@
 body {
-    background-color: #0E1116;
+    background-color: #273a45;
 }
 
-h1 {
-    color: #4ECDC4;
+hr {
+    color: #ce262a;
 }
 
 a {
-    color: #FF6B6B;
+    color: #ce262a;
 }
 
-ul {
+#quick-links {
     list-style-type: circle;
-    color: aqua;
+    color: #ce262a;
+    line-height: 30px;
+    
+}
+
+.header {
+    color: #fffdfe;
 }
