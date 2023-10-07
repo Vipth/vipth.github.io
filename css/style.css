@@ -18,6 +18,7 @@ a {
 }
 
 .header {
+    font-family: Arial;
     color: #fffdfe;
 }
 
@@ -28,7 +29,7 @@ a {
     background-color: rgba(0, 0, 0, 0);
     border-color: #ce262a;
     border-width: 1px;
-    border-radius: 2px;
+    border-radius: 3px;
     border-style: solid;
     padding: 2px 20px;
     margin-bottom: 2px;
@@ -36,12 +37,13 @@ a {
     cursor: pointer;
     align-items: center;
     font-size: 20px;
-    transition: color 150ms,
+    transition: color 300ms,
         background-color 150ms,
         border-color 500ms;
 }
 
 .merch-button:hover {
+    text-align: center;
     background-color: rgba(0, 0, 0, 0.5);
     border-color: rgba(0, 0, 0, 0.5);
     color:#ce262a;
