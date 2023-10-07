@@ -1,0 +1,48 @@
+body {
+    background-color: #273a45;
+}
+
+hr {
+    color: #ce262a;
+}
+
+a {
+    color: #ce262a;
+}
+
+#quick-links {
+    list-style-type: circle;
+    color: #ce262a;
+    line-height: 30px;
+    
+}
+
+.header {
+    color: #fffdfe;
+}
+
+.merch-button {
+    /* display: block; */
+    text-align: center;
+    color: #fffdfe;
+    background-color: rgba(0, 0, 0, 0);
+    border-color: #ce262a;
+    border-width: 1px;
+    border-radius: 2px;
+    border-style: solid;
+    padding: 2px 20px;
+    margin-bottom: 2px;
+    margin-left: 10px;
+    cursor: pointer;
+    align-items: center;
+    font-size: 20px;
+    transition: color 150ms,
+        background-color 150ms,
+        border-color 500ms;
+}
+
+.merch-button:hover {
+    background-color: rgba(0, 0, 0, 0.5);
+    border-color: rgba(0, 0, 0, 0.5);
+    color:#ce262a;
+}
