@@ -387,14 +387,6 @@ body.light-theme .error-banner {
     padding: 16px;
   }
 
-  .actions {
-    position: sticky;
-    bottom: 0;
-    background: var(--card);
-    padding: 12px 0;
-    z-index: 20;
-  }
-
   .actions button {
     flex: 1;
     padding: 16px;
