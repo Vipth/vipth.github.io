@@ -1,7 +1,7 @@
 const STORAGE_KEY = "barCalculator.state";
 const EPSILON = 0.000001;
 
-const UNIT_LABELS = { in: "in", ft: "ft", mm: "mm", cm: "cm", m: "m" };
+const UNIT_LABELS = { in: "in", mm: "mm" };
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (ch) => ({
@@ -355,7 +355,7 @@ function loadState() {
     const state = JSON.parse(saved);
     document.getElementById("rawLength").value = state.rawLength ?? 288;
     document.getElementById("kerf").value = state.kerf ?? 0;
-    document.getElementById("unit").value = state.unit ?? "in";
+    document.getElementById("unit").value = state.unit in UNIT_LABELS ? state.unit : "in";
     setRowsData(state.rows);
   } catch {
     addPart();
