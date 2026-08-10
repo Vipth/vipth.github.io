@@ -75,7 +75,8 @@ label {
   margin-bottom: 6px;
 }
 
-input {
+input,
+select {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--border);
@@ -85,10 +86,47 @@ input {
   font-size: 16px;
 }
 
-input:focus {
+input:focus,
+select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(37,99,235,.2);
+}
+
+input.field-error {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(153,27,27,.2);
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+  margin-bottom: 28px;
+}
+
+.toolbar-group label {
+  margin-bottom: 8px;
+}
+
+.toolbar-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.toolbar-row input,
+.toolbar-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar-row button {
+  flex-shrink: 0;
+}
+
+.print-summary {
+  display: none;
 }
 
 table {
@@ -388,10 +426,17 @@ body.light-theme .error-banner {
 
   .back-link,
   .top-grid,
+  .toolbar,
   #partsTable,
   .actions,
   h2:first-of-type {
     display: none;
+  }
+
+  .print-summary {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 18px;
   }
 
   .container {
