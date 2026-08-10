@@ -1,5 +1,4 @@
 const STORAGE_KEY = "barCalculator.state";
-const PRESETS_KEY = "barCalculator.presets";
 const EPSILON = 0.000001;
 
 const UNIT_LABELS = { in: "in", ft: "ft", mm: "mm", cm: "cm", m: "m" };
@@ -466,87 +465,6 @@ function importCsv(event) {
   reader.readAsText(file);
 }
 
-function getPresets() {
-  try {
-    return JSON.parse(localStorage.getItem(PRESETS_KEY)) || {};
-  } catch {
-    return {};
-  }
-}
-
-function refreshPresetSelect() {
-  const select = document.getElementById("presetSelect");
-  const presets = getPresets();
-  const current = select.value;
-
-  select.innerHTML = '<option value="">Load a preset&hellip;</option>';
-  Object.keys(presets).sort((a, b) => a.localeCompare(b)).forEach((name) => {
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = name;
-    select.appendChild(option);
-  });
-
-  if (presets[current]) {
-    select.value = current;
-  }
-}
-
-function savePreset() {
-  const nameInput = document.getElementById("presetName");
-  const name = nameInput.value.trim();
-
-  if (!name) {
-    showError("Enter a name for the preset before saving.");
-    return;
-  }
-
-  const presets = getPresets();
-  presets[name] = {
-    rawLength: document.getElementById("rawLength").value,
-    kerf: document.getElementById("kerf").value,
-    unit: getUnit(),
-    rows: getRowsData(),
-  };
-
-  localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
-  refreshPresetSelect();
-  document.getElementById("presetSelect").value = name;
-  nameInput.value = "";
-}
-
-function loadPreset() {
-  const select = document.getElementById("presetSelect");
-  const name = select.value;
-  if (!name) return;
-
-  const preset = getPresets()[name];
-  if (!preset) return;
-
-  document.getElementById("rawLength").value = preset.rawLength ?? 288;
-  document.getElementById("kerf").value = preset.kerf ?? 0;
-  document.getElementById("unit").value = preset.unit ?? "in";
-  setRowsData(preset.rows);
-  updateUnitLabels();
-  document.getElementById("results").innerHTML = "";
-  saveState();
-}
-
-function deletePreset() {
-  const select = document.getElementById("presetSelect");
-  const name = select.value;
-
-  if (!name) {
-    showError("Select a preset to delete.");
-    return;
-  }
-
-  const presets = getPresets();
-  delete presets[name];
-  localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
-  refreshPresetSelect();
-}
-
 (function initTheme() {
   if (localStorage.getItem("theme") === "light") {
     document.body.classList.add("light-theme");
@@ -556,4 +474,3 @@ function deletePreset() {
 
 loadState();
 updateUnitLabels();
-refreshPresetSelect();

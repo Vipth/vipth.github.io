@@ -37,20 +37,6 @@
 
   <div class="toolbar">
     <div class="toolbar-group">
-      <label for="presetName">Presets</label>
-      <div class="toolbar-row">
-        <input type="text" id="presetName" placeholder="Preset name">
-        <button class="btn-secondary" onclick="savePreset()">Save Preset</button>
-      </div>
-      <div class="toolbar-row">
-        <select id="presetSelect" onchange="loadPreset()">
-          <option value="">Load a preset&hellip;</option>
-        </select>
-        <button class="btn-danger" onclick="deletePreset()">Delete</button>
-      </div>
-    </div>
-
-    <div class="toolbar-group">
       <label>Parts CSV</label>
       <div class="toolbar-row">
         <button class="btn-secondary" onclick="exportCsv()">Export CSV</button>
