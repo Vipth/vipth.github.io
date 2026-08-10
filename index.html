@@ -1,22 +1,95 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <title>Nexus</title>
-        <link rel="stylesheet" href="css/style.css">
-    </head>
-    <body>
-        <h1 style="text-align: center; font-family: Nabla;" class="header">Quick Links</h1>
-        <hr>
-        <h2 class="header" style="margin-left: 25px;">Merch:</h2>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tools</title>
 
-        <button class="merch-button" style="margin-left: 25px;" onclick="window.location.href='https://www.g59recordsmerchandise.com/collections/all'">
-            G59
-        </button>
-        <button class="merch-button" onclick="window.location.href='https://fuckthepopulation.com/collections/all'">
-            FTP
-        </button>
-        <button class="merch-button" onclick="window.location.href='https://www.foulplay.co/collections/all'">
-            Foulplay
-        </button>
-    </body>
+<style>
+  :root {
+    --bg: #111827;
+    --card: #1f2937;
+    --card2: #374151;
+    --text: #f9fafb;
+    --muted: #9ca3af;
+    --border: #4b5563;
+    --accent: #2563eb;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 40px;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: auto;
+  }
+
+  h1 {
+    margin-top: 0;
+  }
+
+  p.subtitle {
+    color: var(--muted);
+    margin-top: -8px;
+    margin-bottom: 32px;
+  }
+
+  .tool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px;
+  }
+
+  .tool-card {
+    display: block;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 22px;
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color 150ms, transform 150ms;
+  }
+
+  .tool-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  .tool-card h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+  }
+
+  .tool-card p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Tools</h1>
+    <p class="subtitle">A growing suite of small tools.</p>
+
+    <div class="tool-grid">
+      <a class="tool-card" href="tools/bar-calculator/index.html">
+        <h2>Bar Calculator</h2>
+        <p>Cut-list optimizer for raw material lengths &mdash; figure out how many bars you need and how to cut them with minimal waste.</p>
+      </a>
+    </div>
+  </div>
+</body>
 </html>
