@@ -363,8 +363,12 @@ function loadState() {
   try {
     const state = JSON.parse(saved);
     document.getElementById("rawLength").value = state.rawLength ?? 288;
-    document.getElementById("kerf").value = state.kerf ?? UNISTRUT_KERF_IN;
     document.getElementById("cutMode").value = state.cutMode === "steel" ? "steel" : "unistrut";
+    // Unistrut always uses the standard kerf, same as switching modes via
+    // the dropdown - don't restore a stale saved value from Steel mode
+    // (or from before this default existed).
+    document.getElementById("kerf").value =
+      getCutMode() === "unistrut" ? UNISTRUT_KERF_IN : (state.kerf ?? 0);
     setRowsData(state.rows);
   } catch {
     addPart();
