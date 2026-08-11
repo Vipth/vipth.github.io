@@ -98,6 +98,13 @@ input.field-error {
   box-shadow: 0 0 0 3px rgba(153,27,27,.2);
 }
 
+input:disabled,
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--card2);
+}
+
 .toolbar {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -302,6 +309,22 @@ body.light-theme .error-banner {
   font-weight: 700;
 }
 
+.reserved {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--danger-bg),
+    var(--danger-bg) 8px,
+    var(--danger) 8px,
+    var(--danger) 16px
+  );
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .pattern-details {
   color: var(--muted);
   font-size: 14px;
@@ -405,7 +428,8 @@ body.light-theme .error-banner {
   }
 
   .cut,
-  .remainder {
+  .remainder,
+  .reserved {
     font-size: 11px;
   }
 }
