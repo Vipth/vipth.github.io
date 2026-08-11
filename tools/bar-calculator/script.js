@@ -36,7 +36,7 @@ function adjustProgress(index, delta) {
 
   progress[index] = Math.min(pattern.count, Math.max(0, (progress[index] || 0) + delta));
 
-  renderResults(lastRender.rawLength, lastRender.kerf, lastRender.cutMode, lastRender.sticks, lastRender.skippedRows);
+  renderResults(lastRender.rawLength, lastRender.kerf, lastRender.cutMode, lastRender.sticks, lastRender.skippedRows, lastRender.alreadyHaveByItem);
 }
 
 function escapeHtml(str) {
@@ -59,7 +59,7 @@ function onCutModeChange() {
   }
 }
 
-function addPart(item = "", length = "", qty = "1") {
+function addPart(item = "", length = "", qty = "1", have = "0") {
   const table = document.getElementById("partsTable");
   const row = table.insertRow();
 
@@ -72,6 +72,9 @@ function addPart(item = "", length = "", qty = "1") {
     </td>
     <td data-label="Quantity">
       <input type="number" step="1" min="1" class="partQty" value="${escapeHtml(qty)}" placeholder="Qty">
+    </td>
+    <td data-label="Already Have">
+      <input type="number" step="1" min="0" class="partHave" value="${escapeHtml(have)}" placeholder="0">
     </td>
     <td>
       <button class="btn-danger" onclick="this.closest('tr').remove()">Remove</button>
@@ -111,9 +114,11 @@ function readParts() {
   const items = document.querySelectorAll(".itemNumber");
   const lengths = document.querySelectorAll(".partLength");
   const qtys = document.querySelectorAll(".partQty");
+  const haves = document.querySelectorAll(".partHave");
 
   const parts = [];
   const skippedRows = [];
+  const alreadyHaveByItem = {};
 
   for (let i = 0; i < lengths.length; i++) {
     const itemRaw = items[i].value.trim();
@@ -131,13 +136,18 @@ function readParts() {
       continue;
     }
 
+    const have = Math.max(0, parseInt(haves[i].value, 10) || 0);
     const item = itemRaw || length.toString();
-    for (let q = 0; q < qty; q++) {
+
+    alreadyHaveByItem[item] = (alreadyHaveByItem[item] || 0) + have;
+
+    const remaining = Math.max(0, qty - have);
+    for (let q = 0; q < remaining; q++) {
       parts.push({ item, length });
     }
   }
 
-  return { parts, skippedRows };
+  return { parts, skippedRows, alreadyHaveByItem };
 }
 
 function calculate() {
@@ -171,9 +181,9 @@ function calculate() {
     return;
   }
 
-  const { parts, skippedRows } = readParts();
+  const { parts, skippedRows, alreadyHaveByItem } = readParts();
 
-  if (parts.length === 0) {
+  if (parts.length === 0 && Object.keys(alreadyHaveByItem).length === 0) {
     showError("Enter at least one part with a length and quantity.");
     return;
   }
@@ -227,10 +237,10 @@ function calculate() {
   }
 
   progress = {};
-  renderResults(rawLength, kerf, cutMode, sticks, skippedRows);
+  renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem);
 }
 
-function renderResults(rawLength, kerf, cutMode, sticks, skippedRows) {
+function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem) {
   const isSteel = cutMode === "steel";
   let totalRemaining = 0;
   let totalParts = 0;
@@ -244,6 +254,10 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows) {
 
   let totalBarsUsed = 0;
   const itemTotals = {};
+
+  Object.entries(alreadyHaveByItem).forEach(([item, have]) => {
+    itemTotals[item] = { needed: have, completed: have };
+  });
 
   Object.values(patterns).forEach((pattern, index) => {
     const barsUsed = progress[index] || 0;
@@ -369,7 +383,7 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows) {
   });
 
   document.getElementById("results").innerHTML = html;
-  lastRender = { rawLength, kerf, cutMode, sticks, skippedRows };
+  lastRender = { rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem };
 }
 
 function toggleTheme() {
@@ -390,6 +404,7 @@ function getRowsData() {
   const items = document.querySelectorAll(".itemNumber");
   const lengths = document.querySelectorAll(".partLength");
   const qtys = document.querySelectorAll(".partQty");
+  const haves = document.querySelectorAll(".partHave");
 
   const rows = [];
   for (let i = 0; i < lengths.length; i++) {
@@ -397,6 +412,7 @@ function getRowsData() {
       item: items[i].value,
       length: lengths[i].value,
       qty: qtys[i].value,
+      have: haves[i].value,
     });
   }
   return rows;
@@ -409,7 +425,7 @@ function setRowsData(rows) {
   }
 
   if (Array.isArray(rows) && rows.length > 0) {
-    rows.forEach((row) => addPart(row.item, row.length, row.qty));
+    rows.forEach((row) => addPart(row.item, row.length, row.qty, row.have));
   } else {
     addPart();
   }
@@ -427,9 +443,9 @@ function exportCsv() {
     return;
   }
 
-  const lines = ["Item Number,Length,Quantity"];
+  const lines = ["Item Number,Length,Quantity,Already Have"];
   rows.forEach((r) => {
-    lines.push([r.item, r.length, r.qty].map(csvEscapeField).join(","));
+    lines.push([r.item, r.length, r.qty, r.have].map(csvEscapeField).join(","));
   });
 
   const blob = new Blob([lines.join("\n")], { type: "text/csv" });
@@ -500,8 +516,8 @@ function importCsv(event) {
 
     const rows = [];
     for (let i = start; i < lines.length; i++) {
-      const [item = "", length = "", qty = "1"] = parseCsvLine(lines[i]);
-      rows.push({ item, length, qty });
+      const [item = "", length = "", qty = "1", have = "0"] = parseCsvLine(lines[i]);
+      rows.push({ item, length, qty, have });
     }
 
     if (rows.length === 0) {
