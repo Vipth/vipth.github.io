@@ -1,5 +1,7 @@
 const STORAGE_KEY = "barCalculator.state";
 const EPSILON = 0.000001;
+// The laser can't reach the last 10in of a steel bar, regardless of the cut list.
+const STEEL_RESERVE_IN = 10;
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (ch) => ({
@@ -15,12 +17,7 @@ function getCutMode() {
   return document.getElementById("cutMode").value;
 }
 
-function updateReserveFieldState() {
-  document.getElementById("reserve").disabled = getCutMode() !== "steel";
-}
-
 function onCutModeChange() {
-  updateReserveFieldState();
   saveState();
 }
 
@@ -69,7 +66,6 @@ function setFieldError(id, hasError) {
 function clearFieldErrors() {
   setFieldError("rawLength", false);
   setFieldError("kerf", false);
-  setFieldError("reserve", false);
 }
 
 function readParts() {
@@ -114,11 +110,7 @@ function calculate() {
   const rawLength = parseFloat(rawLengthInput.value);
   const kerf = parseFloat(kerfInput.value) || 0;
   const cutMode = getCutMode();
-  const reserveInput = document.getElementById("reserve");
-  // Reserve only applies in steel/laser mode; forcing it to 0 otherwise
-  // keeps Unistrut mode's math identical regardless of what's sitting in
-  // the (disabled) reserve field.
-  const reserve = cutMode === "steel" ? (parseFloat(reserveInput.value) || 0) : 0;
+  const reserve = cutMode === "steel" ? STEEL_RESERVE_IN : 0;
 
   if (isNaN(rawLength) || rawLength <= 0) {
     setFieldError("rawLength", true);
@@ -135,8 +127,8 @@ function calculate() {
   const effectiveRawLength = rawLength - reserve;
 
   if (effectiveRawLength <= EPSILON) {
-    setFieldError("reserve", true);
-    showError("Reserved end length must be less than the raw material length.");
+    setFieldError("rawLength", true);
+    showError(`Raw material length must be greater than the ${STEEL_RESERVE_IN} in reserved for laser cuts.`);
     return;
   }
 
@@ -195,11 +187,11 @@ function calculate() {
     }
   }
 
-  renderResults(rawLength, kerf, cutMode, reserve, sticks, skippedRows);
+  renderResults(rawLength, kerf, cutMode, sticks, skippedRows);
   saveState();
 }
 
-function renderResults(rawLength, kerf, cutMode, reserve, sticks, skippedRows) {
+function renderResults(rawLength, kerf, cutMode, sticks, skippedRows) {
   const isSteel = cutMode === "steel";
   let totalRemaining = 0;
   let totalParts = 0;
@@ -229,11 +221,10 @@ function renderResults(rawLength, kerf, cutMode, reserve, sticks, skippedRows) {
   }
 
   const modeLabel = isSteel ? "Steel/Laser" : "Unistrut";
-  const reserveNote = isSteel ? ` &nbsp;|&nbsp; Reserved end: ${reserve} in` : "";
 
   html += `
     <div class="print-summary">
-      Raw length: ${rawLength} in &nbsp;|&nbsp; Kerf: ${kerf} in &nbsp;|&nbsp; Mode: ${modeLabel}${reserveNote} &nbsp;|&nbsp; Sticks needed: ${sticks.length}
+      Raw length: ${rawLength} in &nbsp;|&nbsp; Kerf: ${kerf} in &nbsp;|&nbsp; Mode: ${modeLabel} &nbsp;|&nbsp; Sticks needed: ${sticks.length}
     </div>
   `;
 
@@ -288,25 +279,13 @@ function renderResults(rawLength, kerf, cutMode, reserve, sticks, skippedRows) {
           <div class="remainder" style="width:${remainderWidth}%">
             ${stick.remaining.toFixed(1)}
           </div>
-    `;
-
-    if (isSteel) {
-      const reservedWidth = (reserve / rawLength) * 100;
-      html += `
-          <div class="reserved" style="width:${reservedWidth}%" title="Unusable - laser cannot reach">
-            ${reserve.toFixed(1)}
-          </div>
-      `;
-    }
-
-    html += `
         </div>
 
         <div class="pattern-details">
           Cuts: ${stick.parts.map((p) => escapeHtml(p.item)).join(", ")}<br>
           Lengths: ${stick.parts.map((p) => `${p.length} in`).join(", ")}<br>
           Parts per stick: ${stick.parts.length}<br>
-          Material used per stick: ${used.toFixed(3)} in${isSteel ? `<br>Reserved (unusable): ${reserve} in` : ""}
+          Material used per stick: ${used.toFixed(3)} in
         </div>
       </div>
     `;
@@ -363,7 +342,6 @@ function saveState() {
     rawLength: document.getElementById("rawLength").value,
     kerf: document.getElementById("kerf").value,
     cutMode: getCutMode(),
-    reserve: document.getElementById("reserve").value,
     rows: getRowsData(),
   };
 
@@ -382,7 +360,6 @@ function loadState() {
     document.getElementById("rawLength").value = state.rawLength ?? 288;
     document.getElementById("kerf").value = state.kerf ?? 0;
     document.getElementById("cutMode").value = state.cutMode === "steel" ? "steel" : "unistrut";
-    document.getElementById("reserve").value = state.reserve ?? 10;
     setRowsData(state.rows);
   } catch {
     addPart();
@@ -500,4 +477,3 @@ function importCsv(event) {
 })();
 
 loadState();
-updateReserveFieldState();
