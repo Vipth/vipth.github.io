@@ -2,6 +2,8 @@ const STORAGE_KEY = "barCalculator.state";
 const EPSILON = 0.000001;
 // The laser can't reach the last 10in of a steel bar, regardless of the cut list.
 const STEEL_RESERVE_IN = 10;
+// Standard unistrut saw kerf.
+const UNISTRUT_KERF_IN = 1 / 16;
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (ch) => ({
@@ -18,6 +20,9 @@ function getCutMode() {
 }
 
 function onCutModeChange() {
+  if (getCutMode() === "unistrut") {
+    document.getElementById("kerf").value = UNISTRUT_KERF_IN;
+  }
   saveState();
 }
 
@@ -358,7 +363,7 @@ function loadState() {
   try {
     const state = JSON.parse(saved);
     document.getElementById("rawLength").value = state.rawLength ?? 288;
-    document.getElementById("kerf").value = state.kerf ?? 0;
+    document.getElementById("kerf").value = state.kerf ?? UNISTRUT_KERF_IN;
     document.getElementById("cutMode").value = state.cutMode === "steel" ? "steel" : "unistrut";
     setRowsData(state.rows);
   } catch {
