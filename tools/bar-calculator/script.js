@@ -4,6 +4,41 @@ const STEEL_RESERVE_IN = 10;
 // Standard unistrut saw kerf.
 const UNISTRUT_KERF_IN = 1 / 16;
 
+// Shop-floor progress tracking: pattern index -> bars marked used so far.
+// Reset on every fresh calculation; never persisted (mirrors the rest of
+// the page's "always start fresh" behavior).
+let progress = {};
+// Cached args from the last renderResults() call, so adjustProgress() can
+// re-render without recomputing the bin-packing.
+let lastRender = null;
+
+function groupPatterns(sticks) {
+  const patterns = {};
+  sticks.forEach((stick) => {
+    const key =
+      stick.parts.map((p) => `${p.item}:${p.length}`).join("|") +
+      `|REM:${stick.remaining.toFixed(3)}`;
+
+    if (!patterns[key]) {
+      patterns[key] = { count: 0, stick };
+    }
+    patterns[key].count++;
+  });
+  return patterns;
+}
+
+function adjustProgress(index, delta) {
+  if (!lastRender) return;
+
+  const patterns = groupPatterns(lastRender.sticks);
+  const pattern = Object.values(patterns)[index];
+  if (!pattern) return;
+
+  progress[index] = Math.min(pattern.count, Math.max(0, (progress[index] || 0) + delta));
+
+  renderResults(lastRender.rawLength, lastRender.kerf, lastRender.cutMode, lastRender.sticks, lastRender.skippedRows);
+}
+
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (ch) => ({
     "&": "&amp;",
@@ -54,6 +89,8 @@ function addPart(item = "", length = "", qty = "1") {
 function clearAllParts() {
   setRowsData([]);
   document.getElementById("results").innerHTML = "";
+  progress = {};
+  lastRender = null;
 }
 
 function showError(message) {
@@ -189,6 +226,7 @@ function calculate() {
     }
   }
 
+  progress = {};
   renderResults(rawLength, kerf, cutMode, sticks, skippedRows);
 }
 
@@ -202,17 +240,25 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows) {
     totalParts += stick.parts.length;
   });
 
-  const patterns = {};
+  const patterns = groupPatterns(sticks);
 
-  sticks.forEach((stick) => {
-    const key =
-      stick.parts.map((p) => `${p.item}:${p.length}`).join("|") +
-      `|REM:${stick.remaining.toFixed(3)}`;
+  let totalBarsUsed = 0;
+  const itemTotals = {};
 
-    if (!patterns[key]) {
-      patterns[key] = { count: 0, stick };
-    }
-    patterns[key].count++;
+  Object.values(patterns).forEach((pattern, index) => {
+    const barsUsed = progress[index] || 0;
+    totalBarsUsed += barsUsed;
+
+    const countsPerBar = {};
+    pattern.stick.parts.forEach((p) => {
+      countsPerBar[p.item] = (countsPerBar[p.item] || 0) + 1;
+    });
+
+    Object.entries(countsPerBar).forEach(([item, n]) => {
+      if (!itemTotals[item]) itemTotals[item] = { needed: 0, completed: 0 };
+      itemTotals[item].needed += n * pattern.count;
+      itemTotals[item].completed += n * barsUsed;
+    });
   });
 
   let html = "";
@@ -225,7 +271,7 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows) {
 
   html += `
     <div class="print-summary">
-      Raw length: ${rawLength} in &nbsp;|&nbsp; Kerf: ${kerf} in &nbsp;|&nbsp; Mode: ${modeLabel} &nbsp;|&nbsp; Sticks needed: ${sticks.length}
+      Raw length: ${rawLength} in &nbsp;|&nbsp; Kerf: ${kerf} in &nbsp;|&nbsp; Mode: ${modeLabel} &nbsp;|&nbsp; Sticks needed: ${sticks.length} &nbsp;|&nbsp; Bars used: ${totalBarsUsed} / ${sticks.length}
     </div>
   `;
 
@@ -247,15 +293,39 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows) {
         <span>Total remainder</span>
         <strong>${totalRemaining.toFixed(3)} in</strong>
       </div>
+      <div class="summary-card">
+        <span>Bars used</span>
+        <strong>${totalBarsUsed} / ${sticks.length}</strong>
+      </div>
+    </div>
+  `;
+
+  html += `
+    <div class="parts-progress">
+      <h3>Parts Progress</h3>
+      <table class="progress-table">
+        <tr>
+          <th>Item Number</th>
+          <th>Completed</th>
+        </tr>
+        ${Object.entries(itemTotals).map(([item, t]) => `
+        <tr>
+          <td data-label="Item Number">${escapeHtml(item)}</td>
+          <td data-label="Completed">${t.completed} / ${t.needed}</td>
+        </tr>
+        `).join("")}
+      </table>
     </div>
   `;
 
   Object.values(patterns).forEach((pattern, index) => {
     const stick = pattern.stick;
     const used = rawLength - stick.remaining;
+    const barsUsed = progress[index] || 0;
+    const isComplete = barsUsed >= pattern.count;
 
     html += `
-      <div class="pattern">
+      <div class="pattern${isComplete ? " pattern-complete" : ""}">
         <div class="pattern-header">
           <span>Pattern ${index + 1}</span>
           <span class="badge">&times; ${pattern.count}</span>
@@ -288,11 +358,18 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows) {
           Parts per stick: ${stick.parts.length}<br>
           Material used per stick: ${used.toFixed(3)} in
         </div>
+
+        <div class="pattern-progress">
+          <button class="btn-secondary" onclick="adjustProgress(${index}, -1)" ${barsUsed <= 0 ? "disabled" : ""}>&minus;1</button>
+          <span class="progress-count">${barsUsed} / ${pattern.count} bars used</span>
+          <button class="btn-primary" onclick="adjustProgress(${index}, 1)" ${isComplete ? "disabled" : ""}>+1 Bar Used</button>
+        </div>
       </div>
     `;
   });
 
   document.getElementById("results").innerHTML = html;
+  lastRender = { rawLength, kerf, cutMode, sticks, skippedRows };
 }
 
 function toggleTheme() {

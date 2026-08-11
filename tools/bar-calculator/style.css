@@ -248,6 +248,10 @@ body.light-theme .error-banner {
   background: var(--card2);
 }
 
+.pattern-complete {
+  border-color: var(--accent);
+}
+
 .pattern-header {
   display: flex;
   justify-content: space-between;
@@ -306,6 +310,38 @@ body.light-theme .error-banner {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.pattern-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.progress-count {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.parts-progress {
+  margin-bottom: 24px;
+}
+
+.parts-progress h3 {
+  margin-bottom: 12px;
+}
+
+.progress-table {
+  border-spacing: 0 8px;
+}
+
+.progress-table th {
+  padding: 0 12px 4px;
+}
+
+.progress-table td {
+  padding: 10px 12px;
 }
 
 /* MOBILE */
@@ -408,6 +444,21 @@ body.light-theme .error-banner {
   .remainder {
     font-size: 11px;
   }
+
+  .pattern-progress {
+    flex-wrap: wrap;
+  }
+
+  .pattern-progress button {
+    flex: 1;
+    padding: 16px;
+  }
+
+  .progress-count {
+    width: 100%;
+    text-align: center;
+    order: -1;
+  }
 }
 
 @media print {
@@ -422,6 +473,10 @@ body.light-theme .error-banner {
   #partsTable,
   .actions,
   h2:first-of-type {
+    display: none;
+  }
+
+  .pattern-progress button {
     display: none;
   }
 
