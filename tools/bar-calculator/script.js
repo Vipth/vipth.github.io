@@ -1,4 +1,3 @@
-const STORAGE_KEY = "barCalculator.state";
 const EPSILON = 0.000001;
 // The laser can't reach the last 10in of a steel bar, regardless of the cut list.
 const STEEL_RESERVE_IN = 10;
@@ -23,7 +22,6 @@ function onCutModeChange() {
   if (getCutMode() === "unistrut") {
     document.getElementById("kerf").value = UNISTRUT_KERF_IN;
   }
-  saveState();
 }
 
 function addPart(item = "", length = "", qty = "1") {
@@ -56,7 +54,6 @@ function addPart(item = "", length = "", qty = "1") {
 function clearAllParts() {
   setRowsData([]);
   document.getElementById("results").innerHTML = "";
-  saveState();
 }
 
 function showError(message) {
@@ -193,7 +190,6 @@ function calculate() {
   }
 
   renderResults(rawLength, kerf, cutMode, sticks, skippedRows);
-  saveState();
 }
 
 function renderResults(rawLength, kerf, cutMode, sticks, skippedRows) {
@@ -342,39 +338,6 @@ function setRowsData(rows) {
   }
 }
 
-function saveState() {
-  const state = {
-    rawLength: document.getElementById("rawLength").value,
-    kerf: document.getElementById("kerf").value,
-    cutMode: getCutMode(),
-    rows: getRowsData(),
-  };
-
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) {
-    addPart();
-    return;
-  }
-
-  try {
-    const state = JSON.parse(saved);
-    document.getElementById("rawLength").value = state.rawLength ?? 288;
-    document.getElementById("cutMode").value = state.cutMode === "steel" ? "steel" : "unistrut";
-    // Unistrut always uses the standard kerf, same as switching modes via
-    // the dropdown - don't restore a stale saved value from Steel mode
-    // (or from before this default existed).
-    document.getElementById("kerf").value =
-      getCutMode() === "unistrut" ? UNISTRUT_KERF_IN : (state.kerf ?? 0);
-    setRowsData(state.rows);
-  } catch {
-    addPart();
-  }
-}
-
 function csvEscapeField(value) {
   const str = String(value);
   return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
@@ -471,7 +434,6 @@ function importCsv(event) {
 
     setRowsData(rows);
     document.getElementById("results").innerHTML = "";
-    saveState();
   };
 
   reader.onerror = () => showError("Could not read the CSV file.");
@@ -485,4 +447,7 @@ function importCsv(event) {
   updateThemeButton();
 })();
 
-loadState();
+// One-time cleanup of the old auto-save blob from before persistence was removed.
+localStorage.removeItem("barCalculator.state");
+
+addPart();
