@@ -17,7 +17,8 @@ function groupPatterns(sticks) {
   sticks.forEach((stick) => {
     const key =
       stick.parts.map((p) => `${p.item}:${p.length}`).join("|") +
-      `|REM:${stick.remaining.toFixed(3)}`;
+      `|REM:${stick.remaining.toFixed(3)}` +
+      `|STOCK:${stick.stock.nominalLength.toFixed(3)}`;
 
     if (!patterns[key]) {
       patterns[key] = { count: 0, stick };
@@ -25,6 +26,42 @@ function groupPatterns(sticks) {
     patterns[key].count++;
   });
   return patterns;
+}
+
+// Splits one raw bar into the fewest segments that each fit the machine's
+// max load length (greedy max-first: full-capacity segments, then whatever
+// remains). Returns [{ nominalLength, label }]. A single-segment result
+// (label: null) means the whole raw bar is used as-is, same as before this
+// feature existed.
+function computeSegments(rawLength, maxLoad, kerf) {
+  if (!maxLoad || maxLoad >= rawLength) {
+    return [{ nominalLength: rawLength, label: null }];
+  }
+
+  const n = Math.ceil(rawLength / maxLoad);
+  let remaining = rawLength - (n - 1) * kerf;
+  const segments = [];
+
+  for (let i = 0; i < n; i++) {
+    const segLen = Math.min(maxLoad, remaining);
+    segments.push({ nominalLength: segLen, label: `Segment ${i + 1}` });
+    remaining -= segLen;
+  }
+
+  return segments;
+}
+
+function findBestFit(sticks, required) {
+  let bestStick = null;
+  for (const stick of sticks) {
+    if (
+      required <= stick.remaining + EPSILON &&
+      (bestStick === null || stick.remaining < bestStick.remaining)
+    ) {
+      bestStick = stick;
+    }
+  }
+  return bestStick;
 }
 
 function adjustProgress(index, delta) {
@@ -36,7 +73,7 @@ function adjustProgress(index, delta) {
 
   progress[index] = Math.min(pattern.count, Math.max(0, (progress[index] || 0) + delta));
 
-  renderResults(lastRender.rawLength, lastRender.kerf, lastRender.cutMode, lastRender.sticks, lastRender.skippedRows, lastRender.alreadyHaveByItem);
+  renderResults(lastRender.rawLength, lastRender.kerf, lastRender.cutMode, lastRender.sticks, lastRender.skippedRows, lastRender.alreadyHaveByItem, lastRender.segments, lastRender.rawBarsUsed);
 }
 
 function escapeHtml(str) {
@@ -108,6 +145,7 @@ function setFieldError(id, hasError) {
 function clearFieldErrors() {
   setFieldError("rawLength", false);
   setFieldError("kerf", false);
+  setFieldError("maxLoad", false);
 }
 
 function readParts() {
@@ -155,11 +193,15 @@ function calculate() {
 
   const rawLengthInput = document.getElementById("rawLength");
   const kerfInput = document.getElementById("kerf");
+  const maxLoadInput = document.getElementById("maxLoad");
 
   const rawLength = parseFloat(rawLengthInput.value);
   const kerf = parseFloat(kerfInput.value) || 0;
   const cutMode = getCutMode();
   const reserve = cutMode === "steel" ? STEEL_RESERVE_IN : 0;
+
+  const maxLoadRaw = maxLoadInput.value.trim();
+  const maxLoad = maxLoadRaw === "" ? null : parseFloat(maxLoadRaw);
 
   if (isNaN(rawLength) || rawLength <= 0) {
     setFieldError("rawLength", true);
@@ -173,11 +215,29 @@ function calculate() {
     return;
   }
 
-  const effectiveRawLength = rawLength - reserve;
+  if (maxLoad !== null && (isNaN(maxLoad) || maxLoad <= 0)) {
+    setFieldError("maxLoad", true);
+    showError("Machine Max Load Length must be greater than zero, or left blank for no limit.");
+    return;
+  }
 
-  if (effectiveRawLength <= EPSILON) {
-    setFieldError("rawLength", true);
-    showError(`Raw material length must be greater than the ${STEEL_RESERVE_IN} in reserved for laser cuts.`);
+  const segments = computeSegments(rawLength, maxLoad, kerf);
+
+  if (segments.some((s) => s.nominalLength <= EPSILON)) {
+    setFieldError("maxLoad", true);
+    showError("Trimming to that max load length loses too much material to kerf. Increase the max load length or reduce kerf.");
+    return;
+  }
+
+  segments.forEach((s) => {
+    s.effectiveLength = Math.max(0, s.nominalLength - reserve);
+    s.usable = s.effectiveLength > EPSILON;
+  });
+
+  const usableSegments = segments.filter((s) => s.usable);
+
+  if (usableSegments.length === 0) {
+    showError("This raw bar produces no usable material after trimming and the reserved end.");
     return;
   }
 
@@ -193,8 +253,9 @@ function calculate() {
   // conservative convention: the rare case where a stick's last part lands
   // exactly on the end (no scrap, no final cut needed) gets over-charged by
   // one kerf width, but material requirements are never under-counted.
+  const maxUsableLength = Math.max(...usableSegments.map((s) => s.effectiveLength));
   const oversizedLengths = new Set(
-    parts.filter((p) => p.length + kerf > effectiveRawLength + EPSILON).map((p) => p.length)
+    parts.filter((p) => p.length + kerf > maxUsableLength + EPSILON).map((p) => p.length)
   );
 
   if (oversizedLengths.size > 0) {
@@ -207,40 +268,36 @@ function calculate() {
   parts.sort((a, b) => b.length - a.length);
 
   const sticks = [];
+  let rawBarsUsed = 0;
 
   // Best-fit decreasing: place each part (largest first) onto the stick
-  // that leaves the least leftover space, opening a new stick only when
-  // none of the existing ones fit. This packs tighter than first-fit and
-  // never does worse, at the same O(parts * sticks) cost.
+  // that leaves the least leftover space, opening a new raw bar's worth of
+  // segments only when none of the existing ones fit. This packs tighter
+  // than first-fit and never does worse, at the same O(parts * sticks) cost.
   for (const part of parts) {
     const required = part.length + kerf;
-    let bestStick = null;
+    let bestStick = findBestFit(sticks, required);
 
-    for (const stick of sticks) {
-      if (
-        required <= stick.remaining + EPSILON &&
-        (bestStick === null || stick.remaining < bestStick.remaining)
-      ) {
-        bestStick = stick;
-      }
+    if (!bestStick) {
+      const batch = usableSegments.map((s) => ({
+        parts: [],
+        remaining: s.effectiveLength,
+        stock: s,
+      }));
+      sticks.push(...batch);
+      rawBarsUsed++;
+      bestStick = findBestFit(batch, required);
     }
 
-    if (bestStick) {
-      bestStick.parts.push(part);
-      bestStick.remaining -= required;
-    } else {
-      sticks.push({
-        parts: [part],
-        remaining: effectiveRawLength - required,
-      });
-    }
+    bestStick.parts.push(part);
+    bestStick.remaining -= required;
   }
 
   progress = {};
-  renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem);
+  renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem, segments, rawBarsUsed);
 }
 
-function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem) {
+function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem, segments, rawBarsUsed) {
   const isSteel = cutMode === "steel";
   let totalRemaining = 0;
   let totalParts = 0;
@@ -282,10 +339,20 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
   }
 
   const modeLabel = isSteel ? "Steel/Laser" : "Unistrut";
+  const isTrimmed = segments.length > 1;
+
+  if (isTrimmed) {
+    const segmentText = segments.map((s) => `${s.label} — ${s.nominalLength.toFixed(3)} in${s.usable ? "" : " (unusable after reserve)"}`).join(", ");
+    html += `
+      <div class="trim-breakdown">
+        Each ${rawLength} in raw bar trims into: ${segmentText}
+      </div>
+    `;
+  }
 
   html += `
     <div class="print-summary">
-      Raw length: ${rawLength} in &nbsp;|&nbsp; Kerf: ${kerf} in &nbsp;|&nbsp; Mode: ${modeLabel} &nbsp;|&nbsp; Sticks needed: ${sticks.length} &nbsp;|&nbsp; Bars used: ${totalBarsUsed} / ${sticks.length}
+      Raw length: ${rawLength} in &nbsp;|&nbsp; Kerf: ${kerf} in &nbsp;|&nbsp; Mode: ${modeLabel} &nbsp;|&nbsp; Sticks needed: ${sticks.length} &nbsp;|&nbsp; Bars used: ${totalBarsUsed} / ${sticks.length}${isTrimmed ? ` &nbsp;|&nbsp; Raw bars needed: ${rawBarsUsed}` : ""}
     </div>
   `;
 
@@ -311,6 +378,12 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
         <span>Bars used</span>
         <strong>${totalBarsUsed} / ${sticks.length}</strong>
       </div>
+      ${isTrimmed ? `
+      <div class="summary-card">
+        <span>Raw bars needed</span>
+        <strong>${rawBarsUsed}</strong>
+      </div>
+      ` : ""}
     </div>
   `;
 
@@ -334,7 +407,8 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
 
   Object.values(patterns).forEach((pattern, index) => {
     const stick = pattern.stick;
-    const used = rawLength - stick.remaining;
+    const stockLength = stick.stock.nominalLength;
+    const used = stockLength - stick.remaining;
     const barsUsed = progress[index] || 0;
     const isComplete = barsUsed >= pattern.count;
 
@@ -342,6 +416,7 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
       <div class="pattern${isComplete ? " pattern-complete" : ""}">
         <div class="pattern-header">
           <span>Pattern ${index + 1}</span>
+          ${stick.stock.label ? `<span class="badge badge-secondary">${stick.stock.label}</span>` : ""}
           <span class="badge">&times; ${pattern.count}</span>
           <span>Remainder: ${stick.remaining.toFixed(3)} in</span>
         </div>
@@ -350,7 +425,7 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
     `;
 
     stick.parts.forEach((part) => {
-      const width = (part.length / rawLength) * 100;
+      const width = (part.length / stockLength) * 100;
       html += `
         <div class="cut" style="width:${width}%">
           ${escapeHtml(part.item)}
@@ -358,7 +433,7 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
       `;
     });
 
-    const remainderWidth = (stick.remaining / rawLength) * 100;
+    const remainderWidth = (stick.remaining / stockLength) * 100;
 
     html += `
           <div class="remainder" style="width:${remainderWidth}%">
@@ -383,7 +458,7 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
   });
 
   document.getElementById("results").innerHTML = html;
-  lastRender = { rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem };
+  lastRender = { rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem, segments, rawBarsUsed };
 }
 
 function toggleTheme() {
