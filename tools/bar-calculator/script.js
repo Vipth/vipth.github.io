@@ -3,6 +3,11 @@ const EPSILON = 0.000001;
 const STEEL_RESERVE_IN = 10;
 // Standard unistrut saw kerf.
 const UNISTRUT_KERF_IN = 1 / 16;
+// Trim cuts (splitting a raw bar down to fit the machine) land on whole-foot
+// marks - practical to measure and mark on the shop floor, unlike the exact
+// fractional-inch points that would come out of pure math. The actual part
+// cuts within each segment still use the user's exact requested lengths.
+const TRIM_ROUNDING_IN = 12;
 
 // Shop-floor progress tracking: pattern index -> bars marked used so far.
 // Reset on every fresh calculation; never persisted (mirrors the rest of
@@ -108,6 +113,16 @@ function findBestSegmentation(rawLength, maxLoad, kerf, reserve, parts) {
   const upperBound = Math.min(maxLoad, usableAfterTrim);
   const lowerBound = Math.max(EPSILON, usableAfterTrim - maxLoad * (n - 1));
 
+  // Trim cuts should land on whole feet (TRIM_ROUNDING_IN) so they're
+  // practical to mark and cut - narrow the valid range to whole-foot marks,
+  // falling back to the exact fractional bounds only on the rare input
+  // where no whole-foot cut is actually achievable.
+  const roundedLowerBound = Math.ceil(lowerBound / TRIM_ROUNDING_IN) * TRIM_ROUNDING_IN;
+  const roundedUpperBound = Math.floor(upperBound / TRIM_ROUNDING_IN) * TRIM_ROUNDING_IN;
+  const canRoundToFoot = roundedLowerBound <= roundedUpperBound + EPSILON;
+  const clampLower = canRoundToFoot ? roundedLowerBound : lowerBound;
+  const clampUpper = canRoundToFoot ? roundedUpperBound : upperBound;
+
   const candidateFirstLengths = new Set([upperBound, lowerBound, usableAfterTrim / n]);
 
   const distinctLengths = [...new Set(parts.map((p) => p.length))];
@@ -124,7 +139,8 @@ function findBestSegmentation(rawLength, maxLoad, kerf, reserve, parts) {
   const tried = new Set();
 
   candidateFirstLengths.forEach((raw) => {
-    const firstLength = Math.min(upperBound, Math.max(lowerBound, raw));
+    const rounded = canRoundToFoot ? Math.round(raw / TRIM_ROUNDING_IN) * TRIM_ROUNDING_IN : raw;
+    const firstLength = Math.min(clampUpper, Math.max(clampLower, rounded));
     const key = firstLength.toFixed(6);
     if (tried.has(key)) return;
     tried.add(key);
