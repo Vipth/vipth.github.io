@@ -3,6 +3,11 @@ const EPSILON = 0.000001;
 const STEEL_RESERVE_IN = 10;
 // Standard unistrut saw kerf.
 const UNISTRUT_KERF_IN = 1 / 16;
+// Trim cuts (splitting a raw bar down to fit the machine) land on whole-foot
+// marks - practical to measure and mark on the shop floor, unlike the exact
+// fractional-inch points that would come out of pure math. The actual part
+// cuts within each segment still use the user's exact requested lengths.
+const TRIM_ROUNDING_IN = 12;
 
 // Shop-floor progress tracking: pattern index -> bars marked used so far.
 // Reset on every fresh calculation; never persisted (mirrors the rest of
@@ -108,6 +113,16 @@ function findBestSegmentation(rawLength, maxLoad, kerf, reserve, parts) {
   const upperBound = Math.min(maxLoad, usableAfterTrim);
   const lowerBound = Math.max(EPSILON, usableAfterTrim - maxLoad * (n - 1));
 
+  // Trim cuts should land on whole feet (TRIM_ROUNDING_IN) so they're
+  // practical to mark and cut - narrow the valid range to whole-foot marks,
+  // falling back to the exact fractional bounds only on the rare input
+  // where no whole-foot cut is actually achievable.
+  const roundedLowerBound = Math.ceil(lowerBound / TRIM_ROUNDING_IN) * TRIM_ROUNDING_IN;
+  const roundedUpperBound = Math.floor(upperBound / TRIM_ROUNDING_IN) * TRIM_ROUNDING_IN;
+  const canRoundToFoot = roundedLowerBound <= roundedUpperBound + EPSILON;
+  const clampLower = canRoundToFoot ? roundedLowerBound : lowerBound;
+  const clampUpper = canRoundToFoot ? roundedUpperBound : upperBound;
+
   const candidateFirstLengths = new Set([upperBound, lowerBound, usableAfterTrim / n]);
 
   const distinctLengths = [...new Set(parts.map((p) => p.length))];
@@ -124,7 +139,8 @@ function findBestSegmentation(rawLength, maxLoad, kerf, reserve, parts) {
   const tried = new Set();
 
   candidateFirstLengths.forEach((raw) => {
-    const firstLength = Math.min(upperBound, Math.max(lowerBound, raw));
+    const rounded = canRoundToFoot ? Math.round(raw / TRIM_ROUNDING_IN) * TRIM_ROUNDING_IN : raw;
+    const firstLength = Math.min(clampUpper, Math.max(clampLower, rounded));
     const key = firstLength.toFixed(6);
     if (tried.has(key)) return;
     tried.add(key);
@@ -164,6 +180,16 @@ function adjustProgress(index, delta) {
   progress[index] = Math.min(pattern.count, Math.max(0, (progress[index] || 0) + delta));
 
   renderResults(lastRender.rawLength, lastRender.kerf, lastRender.cutMode, lastRender.sticks, lastRender.skippedRows, lastRender.alreadyHaveByItem, lastRender.segments, lastRender.rawBarsUsed);
+}
+
+// Appends a "(X ft Y in)" reading next to any inch value of a foot or more,
+// so long lengths are easy to pull off a tape measure without doing the
+// division by hand. Below 12in it's just noise, so nothing is added.
+function feetSuffix(inches) {
+  if (inches < 12 - EPSILON) return "";
+  const feet = Math.floor(inches / 12 + EPSILON);
+  const remInches = inches - feet * 12;
+  return remInches > EPSILON ? ` (${feet} ft ${remInches.toFixed(3)} in)` : ` (${feet} ft)`;
 }
 
 function escapeHtml(str) {
@@ -429,22 +455,28 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
   const isTrimmed = segments.length > 1;
 
   if (isTrimmed) {
-    const segmentText = segments.map((s) => `${s.label} — ${s.nominalLength.toFixed(3)} in${s.usable ? "" : " (unusable after reserve)"}`).join(", ");
+    const segmentText = segments.map((s) => `${s.label} — ${s.nominalLength.toFixed(3)} in${feetSuffix(s.nominalLength)}${s.usable ? "" : " (unusable after reserve)"}`).join(", ");
     html += `
       <div class="trim-breakdown">
-        Each ${rawLength} in raw bar trims into: ${segmentText}
+        Each ${rawLength} in${feetSuffix(rawLength)} raw bar trims into: ${segmentText}
       </div>
     `;
   }
 
   html += `
     <div class="print-summary">
-      Raw length: ${rawLength} in &nbsp;|&nbsp; Kerf: ${kerf} in &nbsp;|&nbsp; Mode: ${modeLabel} &nbsp;|&nbsp; Sticks needed: ${sticks.length} &nbsp;|&nbsp; Bars used: ${totalBarsUsed} / ${sticks.length}${isTrimmed ? ` &nbsp;|&nbsp; Raw bars needed: ${rawBarsUsed}` : ""}
+      Raw length: ${rawLength} in${feetSuffix(rawLength)} &nbsp;|&nbsp; Kerf: ${kerf} in &nbsp;|&nbsp; Mode: ${modeLabel} &nbsp;|&nbsp; Sticks needed: ${sticks.length} &nbsp;|&nbsp; Bars used: ${totalBarsUsed} / ${sticks.length}${isTrimmed ? ` &nbsp;|&nbsp; Raw bars needed: ${rawBarsUsed}` : ""}
     </div>
   `;
 
   html += `
     <div class="summary">
+      ${isTrimmed ? `
+      <div class="summary-card">
+        <span>Raw bars needed</span>
+        <strong>${rawBarsUsed}</strong>
+      </div>
+      ` : ""}
       <div class="summary-card">
         <span>Total sticks needed</span>
         <strong>${sticks.length}</strong>
@@ -459,18 +491,12 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
       </div>
       <div class="summary-card">
         <span>Total remainder</span>
-        <strong>${totalRemaining.toFixed(3)} in</strong>
+        <strong>${totalRemaining.toFixed(3)} in${feetSuffix(totalRemaining)}</strong>
       </div>
       <div class="summary-card">
         <span>Bars used</span>
         <strong>${totalBarsUsed} / ${sticks.length}</strong>
       </div>
-      ${isTrimmed ? `
-      <div class="summary-card">
-        <span>Raw bars needed</span>
-        <strong>${rawBarsUsed}</strong>
-      </div>
-      ` : ""}
     </div>
   `;
 
@@ -492,20 +518,29 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
     </div>
   `;
 
+  let patternNumber = 0;
+
   Object.values(patterns).forEach((pattern, index) => {
     const stick = pattern.stick;
     const stockLength = stick.stock.nominalLength;
     const used = stockLength - stick.remaining;
     const barsUsed = progress[index] || 0;
     const isComplete = barsUsed >= pattern.count;
+    // A pattern with no parts on it is the "other half" of a raw bar that
+    // had to be bought to reach a smaller segment for some other part -
+    // it's leftover stock, not an actual cut instruction, so it gets
+    // labeled distinctly and skips the cut-tracking controls entirely.
+    const isUnused = stick.parts.length === 0;
+
+    if (!isUnused) patternNumber++;
 
     html += `
-      <div class="pattern${isComplete ? " pattern-complete" : ""}">
+      <div class="pattern${isComplete ? " pattern-complete" : ""}${isUnused ? " pattern-unused" : ""}">
         <div class="pattern-header">
-          <span>Pattern ${index + 1}</span>
+          <span>${isUnused ? "Unused Segment" : `Pattern ${patternNumber}`}</span>
           ${stick.stock.label ? `<span class="badge badge-secondary">${stick.stock.label}</span>` : ""}
           <span class="badge">&times; ${pattern.count}</span>
-          <span>Remainder: ${stick.remaining.toFixed(3)} in</span>
+          <span>Remainder: ${stick.remaining.toFixed(3)} in${feetSuffix(stick.remaining)}</span>
         </div>
 
         <div class="bar">
@@ -529,19 +564,30 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
         </div>
 
         <div class="pattern-details">
-          Cuts: ${stick.parts.map((p) => escapeHtml(p.item)).join(", ")}<br>
-          Lengths: ${stick.parts.map((p) => `${p.length} in`).join(", ")}<br>
-          Parts per stick: ${stick.parts.length}<br>
-          Material used per stick: ${used.toFixed(3)} in
-        </div>
+    `;
 
+    html += isUnused
+      ? `Not needed for any part in this list &mdash; comes along with a raw bar bought for its other segment. Leftover stock for next time.`
+      : `
+          Cuts: ${stick.parts.map((p) => escapeHtml(p.item)).join(", ")}<br>
+          Lengths: ${stick.parts.map((p) => `${p.length} in${feetSuffix(p.length)}`).join(", ")}<br>
+          Parts per stick: ${stick.parts.length}<br>
+          Material used per stick: ${used.toFixed(3)} in${feetSuffix(used)}
+      `;
+
+    html += `</div>`;
+
+    if (!isUnused) {
+      html += `
         <div class="pattern-progress">
           <button class="btn-secondary" onclick="adjustProgress(${index}, -1)" ${barsUsed <= 0 ? "disabled" : ""}>&minus;1</button>
           <span class="progress-count">${barsUsed} / ${pattern.count} bars used</span>
           <button class="btn-primary" onclick="adjustProgress(${index}, 1)" ${isComplete ? "disabled" : ""}>+1 Bar Used</button>
         </div>
-      </div>
-    `;
+      `;
+    }
+
+    html += `</div>`;
   });
 
   document.getElementById("results").innerHTML = html;
