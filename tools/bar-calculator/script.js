@@ -492,17 +492,26 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
     </div>
   `;
 
+  let patternNumber = 0;
+
   Object.values(patterns).forEach((pattern, index) => {
     const stick = pattern.stick;
     const stockLength = stick.stock.nominalLength;
     const used = stockLength - stick.remaining;
     const barsUsed = progress[index] || 0;
     const isComplete = barsUsed >= pattern.count;
+    // A pattern with no parts on it is the "other half" of a raw bar that
+    // had to be bought to reach a smaller segment for some other part -
+    // it's leftover stock, not an actual cut instruction, so it gets
+    // labeled distinctly and skips the cut-tracking controls entirely.
+    const isUnused = stick.parts.length === 0;
+
+    if (!isUnused) patternNumber++;
 
     html += `
-      <div class="pattern${isComplete ? " pattern-complete" : ""}">
+      <div class="pattern${isComplete ? " pattern-complete" : ""}${isUnused ? " pattern-unused" : ""}">
         <div class="pattern-header">
-          <span>Pattern ${index + 1}</span>
+          <span>${isUnused ? "Unused Segment" : `Pattern ${patternNumber}`}</span>
           ${stick.stock.label ? `<span class="badge badge-secondary">${stick.stock.label}</span>` : ""}
           <span class="badge">&times; ${pattern.count}</span>
           <span>Remainder: ${stick.remaining.toFixed(3)} in</span>
@@ -529,19 +538,30 @@ function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHav
         </div>
 
         <div class="pattern-details">
+    `;
+
+    html += isUnused
+      ? `Not needed for any part in this list &mdash; comes along with a raw bar bought for its other segment. Leftover stock for next time.`
+      : `
           Cuts: ${stick.parts.map((p) => escapeHtml(p.item)).join(", ")}<br>
           Lengths: ${stick.parts.map((p) => `${p.length} in`).join(", ")}<br>
           Parts per stick: ${stick.parts.length}<br>
           Material used per stick: ${used.toFixed(3)} in
-        </div>
+      `;
 
+    html += `</div>`;
+
+    if (!isUnused) {
+      html += `
         <div class="pattern-progress">
           <button class="btn-secondary" onclick="adjustProgress(${index}, -1)" ${barsUsed <= 0 ? "disabled" : ""}>&minus;1</button>
           <span class="progress-count">${barsUsed} / ${pattern.count} bars used</span>
           <button class="btn-primary" onclick="adjustProgress(${index}, 1)" ${isComplete ? "disabled" : ""}>+1 Bar Used</button>
         </div>
-      </div>
-    `;
+      `;
+    }
+
+    html += `</div>`;
   });
 
   document.getElementById("results").innerHTML = html;

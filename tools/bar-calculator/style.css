@@ -252,6 +252,11 @@ body.light-theme .error-banner {
   border-color: var(--accent);
 }
 
+.pattern-unused {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
 .pattern-header {
   display: flex;
   justify-content: space-between;
