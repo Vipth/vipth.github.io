@@ -28,24 +28,21 @@ function groupPatterns(sticks) {
   return patterns;
 }
 
-// Splits one raw bar into the fewest segments that each fit the machine's
-// max load length (greedy max-first: full-capacity segments, then whatever
-// remains). Returns [{ nominalLength, label }]. A single-segment result
-// (label: null) means the whole raw bar is used as-is, same as before this
-// feature existed.
-function computeSegments(rawLength, maxLoad, kerf) {
-  if (!maxLoad || maxLoad >= rawLength) {
-    return [{ nominalLength: rawLength, label: null }];
-  }
-
-  const n = Math.ceil(rawLength / maxLoad);
-  let remaining = rawLength - (n - 1) * kerf;
+// Builds one raw bar's segments given a chosen first-segment length: the
+// first segment is `firstLength`, everything after is filled max-first
+// (full-capacity segments, then whatever's left). Varying firstLength is
+// how different trim strategies get generated and compared - see
+// findBestSegmentation().
+function buildSegmentsFrom(usableAfterTrim, maxLoad, firstLength) {
   const segments = [];
+  let remaining = usableAfterTrim;
+  let isFirst = true;
 
-  for (let i = 0; i < n; i++) {
-    const segLen = Math.min(maxLoad, remaining);
-    segments.push({ nominalLength: segLen, label: `Segment ${i + 1}` });
+  while (remaining > EPSILON) {
+    const segLen = isFirst ? Math.min(firstLength, remaining) : Math.min(maxLoad, remaining);
+    segments.push({ nominalLength: segLen, label: `Segment ${segments.length + 1}` });
     remaining -= segLen;
+    isFirst = false;
   }
 
   return segments;
@@ -62,6 +59,99 @@ function findBestFit(sticks, required) {
     }
   }
   return bestStick;
+}
+
+// Best-fit decreasing: place each part (largest first) onto the stock
+// piece that leaves the least leftover space, opening a new raw bar's
+// worth of segments only when none of the existing ones fit. Assumes
+// `parts` is already sorted largest-first.
+function packParts(parts, kerf, usableSegments) {
+  const sticks = [];
+  let rawBarsUsed = 0;
+
+  for (const part of parts) {
+    const required = part.length + kerf;
+    let bestStick = findBestFit(sticks, required);
+
+    if (!bestStick) {
+      const batch = usableSegments.map((s) => ({
+        parts: [],
+        remaining: s.effectiveLength,
+        stock: s,
+      }));
+      sticks.push(...batch);
+      rawBarsUsed++;
+      bestStick = findBestFit(batch, required);
+    }
+
+    bestStick.parts.push(part);
+    bestStick.remaining -= required;
+  }
+
+  return { sticks, rawBarsUsed };
+}
+
+// A raw bar always gets trimmed into the same number of segments (n),
+// determined purely by how many maxLoad-sized pieces it takes to cover
+// rawLength - but *where* the cuts land within that budget can matter a
+// lot for how well the segments end up fitting the actual parts list
+// (e.g. an even split can beat a "biggest piece first" split, or vice
+// versa, depending on part lengths). Rather than committing to one fixed
+// strategy, this tries a handful of candidate first-segment lengths -
+// max-first, an even split, and lengths that let some segment hold an
+// exact whole number of a given part length - and keeps whichever
+// actually needs the fewest raw bars for this parts list (ties broken by
+// least total remainder).
+function findBestSegmentation(rawLength, maxLoad, kerf, reserve, parts) {
+  const n = Math.ceil(rawLength / maxLoad);
+  const usableAfterTrim = rawLength - (n - 1) * kerf;
+  const upperBound = Math.min(maxLoad, usableAfterTrim);
+  const lowerBound = Math.max(EPSILON, usableAfterTrim - maxLoad * (n - 1));
+
+  const candidateFirstLengths = new Set([upperBound, lowerBound, usableAfterTrim / n]);
+
+  const distinctLengths = [...new Set(parts.map((p) => p.length))];
+  distinctLengths.forEach((length) => {
+    const unit = length + kerf;
+    const maxK = Math.floor((upperBound + EPSILON) / unit);
+    for (let k = 1; k <= maxK; k++) {
+      candidateFirstLengths.add(k * unit);
+      candidateFirstLengths.add(usableAfterTrim - k * unit);
+    }
+  });
+
+  let best = null;
+  const tried = new Set();
+
+  candidateFirstLengths.forEach((raw) => {
+    const firstLength = Math.min(upperBound, Math.max(lowerBound, raw));
+    const key = firstLength.toFixed(6);
+    if (tried.has(key)) return;
+    tried.add(key);
+
+    const segments = buildSegmentsFrom(usableAfterTrim, maxLoad, firstLength);
+    if (segments.length !== n) return; // kerf loss made this split impossible; skip it
+
+    segments.forEach((s) => {
+      s.effectiveLength = Math.max(0, s.nominalLength - reserve);
+      s.usable = s.effectiveLength > EPSILON;
+    });
+    const usableSegments = segments.filter((s) => s.usable);
+    if (usableSegments.length === 0) return;
+
+    const { sticks, rawBarsUsed } = packParts(parts, kerf, usableSegments);
+    const totalRemaining = sticks.reduce((sum, s) => sum + s.remaining, 0);
+
+    if (
+      !best ||
+      rawBarsUsed < best.rawBarsUsed ||
+      (rawBarsUsed === best.rawBarsUsed && totalRemaining < best.totalRemaining)
+    ) {
+      best = { segments, sticks, rawBarsUsed, totalRemaining };
+    }
+  });
+
+  return best;
 }
 
 function adjustProgress(index, delta) {
@@ -221,23 +311,28 @@ function calculate() {
     return;
   }
 
-  const segments = computeSegments(rawLength, maxLoad, kerf);
+  const trimming = maxLoad !== null && maxLoad < rawLength;
+  const n = trimming ? Math.ceil(rawLength / maxLoad) : 1;
+  const usableAfterTrim = trimming ? rawLength - (n - 1) * kerf : rawLength;
 
-  if (segments.some((s) => s.nominalLength <= EPSILON)) {
+  if (usableAfterTrim <= EPSILON) {
     setFieldError("maxLoad", true);
     showError("Trimming to that max load length loses too much material to kerf. Increase the max load length or reduce kerf.");
     return;
   }
 
-  segments.forEach((s) => {
-    s.effectiveLength = Math.max(0, s.nominalLength - reserve);
-    s.usable = s.effectiveLength > EPSILON;
-  });
+  // The largest segment any trim strategy could possibly produce is capped
+  // at maxLoad (or the whole bar, if not trimming) - used below to reject
+  // parts that couldn't fit no matter how the bar gets split.
+  const bestCaseSegment = trimming ? Math.min(maxLoad, usableAfterTrim) : usableAfterTrim;
+  const maxUsableLength = bestCaseSegment - reserve;
 
-  const usableSegments = segments.filter((s) => s.usable);
-
-  if (usableSegments.length === 0) {
-    showError("This raw bar produces no usable material after trimming and the reserved end.");
+  if (maxUsableLength <= EPSILON) {
+    showError(
+      trimming
+        ? "This raw bar produces no usable material after trimming and the reserved end."
+        : `Raw material length must be greater than the ${STEEL_RESERVE_IN} in reserved for laser cuts.`
+    );
     return;
   }
 
@@ -253,7 +348,6 @@ function calculate() {
   // conservative convention: the rare case where a stick's last part lands
   // exactly on the end (no scrap, no final cut needed) gets over-charged by
   // one kerf width, but material requirements are never under-counted.
-  const maxUsableLength = Math.max(...usableSegments.map((s) => s.effectiveLength));
   const oversizedLengths = new Set(
     parts.filter((p) => p.length + kerf > maxUsableLength + EPSILON).map((p) => p.length)
   );
@@ -267,34 +361,27 @@ function calculate() {
 
   parts.sort((a, b) => b.length - a.length);
 
-  const sticks = [];
-  let rawBarsUsed = 0;
+  let result;
 
-  // Best-fit decreasing: place each part (largest first) onto the stick
-  // that leaves the least leftover space, opening a new raw bar's worth of
-  // segments only when none of the existing ones fit. This packs tighter
-  // than first-fit and never does worse, at the same O(parts * sticks) cost.
-  for (const part of parts) {
-    const required = part.length + kerf;
-    let bestStick = findBestFit(sticks, required);
+  if (!trimming) {
+    const segments = [{
+      nominalLength: rawLength,
+      label: null,
+      effectiveLength: Math.max(0, rawLength - reserve),
+      usable: true,
+    }];
+    result = { segments, ...packParts(parts, kerf, segments) };
+  } else {
+    result = findBestSegmentation(rawLength, maxLoad, kerf, reserve, parts);
 
-    if (!bestStick) {
-      const batch = usableSegments.map((s) => ({
-        parts: [],
-        remaining: s.effectiveLength,
-        stock: s,
-      }));
-      sticks.push(...batch);
-      rawBarsUsed++;
-      bestStick = findBestFit(batch, required);
+    if (!result) {
+      showError("Could not find a valid way to trim this raw bar. Try adjusting kerf, raw length, or max load length.");
+      return;
     }
-
-    bestStick.parts.push(part);
-    bestStick.remaining -= required;
   }
 
   progress = {};
-  renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem, segments, rawBarsUsed);
+  renderResults(rawLength, kerf, cutMode, result.sticks, skippedRows, alreadyHaveByItem, result.segments, result.rawBarsUsed);
 }
 
 function renderResults(rawLength, kerf, cutMode, sticks, skippedRows, alreadyHaveByItem, segments, rawBarsUsed) {
