@@ -267,6 +267,25 @@ body.light-theme .error-banner {
   border-radius: 999px;
 }
 
+.badge-secondary {
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.trim-breakdown {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
 .bar {
   height: 48px;
   display: flex;
